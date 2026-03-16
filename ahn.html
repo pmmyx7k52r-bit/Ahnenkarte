@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Familien-Stammbaum · Karte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root {
+--ink: #2c1810; --parchment: #f5ead6; --parchment-dark: #e8d5b0;
+--parchment-deep: #d4b896; --rust: #8b3a1e; --gold: #c49a3c;
+--sage: #5a6e4a; --faded: #7a6655; --shadow: rgba(44,24,16,0.15);
+--birth-color: #3d6b3a; --wed-color: #8b6914; --death-color: #7a2020;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'EB Garamond', Georgia, serif; background: var(--parchment); color: var(--ink); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+header { background: var(--ink); color: var(--parchment); padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid var(--gold); flex-shrink: 0; }
+header h1 { font-family: 'Playfair Display', Palatino, serif; font-size: 1.4rem; }
+header .subtitle { font-size: 0.78rem; color: var(--parchment-deep); font-style: italic; }
+.btn-add { background: var(--gold); color: var(--ink); border: none; padding: 7px 16px; font-family: 'EB Garamond', serif; font-size: 0.95rem; cursor: pointer; border-radius: 2px; }
+.btn-add:hover { background: #d4aa50; }
+.main { display: flex; flex: 1; overflow: hidden; }
+.sidebar { width: 320px; min-width: 260px; background: var(--parchment); border-right: 2px solid var(--parchment-deep); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+.sidebar-tabs { display: flex; border-bottom: 2px solid var(--parchment-deep); flex-shrink: 0; }
+.tab-btn { flex: 1; padding: 9px 4px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-family: 'EB Garamond', serif; font-size: 0.85rem; color: var(--faded); cursor: pointer; }
+.tab-btn.active { color: var(--ink); border-bottom-color: var(--rust); font-weight: 600; }
+.tab-panel { display: none; flex: 1; overflow-y: auto; flex-direction: column; }
+.tab-panel.active { display: flex; }
+.person-list { padding: 8px; }
+.person-card { background: white; border: 1px solid var(--parchment-deep); border-left: 3px solid var(--gold); border-radius: 2px; padding: 9px 32px 9px 11px; margin-bottom: 7px; cursor: pointer; position: relative; }
+.person-card:hover { border-left-color: var(--rust); box-shadow: 0 2px 8px var(--shadow); }
+.person-card.selected { border-left-color: var(--rust); background: #fff8f0; }
+.person-card .pname { font-family: 'Playfair Display', serif; font-size: 0.95rem; font-weight: 700; }
+.person-card .pyears { font-size: 0.78rem; color: var(--faded); font-style: italic; margin-top: 2px; }
+.person-card .pplaces { font-size: 0.76rem; color: var(--faded); margin-top: 3px; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
+.dot-b { background: var(--birth-color); } .dot-h { background: var(--wed-color); } .dot-t { background: var(--death-color); }
+.btn-del { position: absolute; top: 7px; right: 8px; background: none; border: none; color: #c0a090; cursor: pointer; font-size: 1.1rem; line-height: 1; }
+.btn-del:hover { color: var(--rust); }
+.empty-hint { text-align: center; padding: 30px 16px; color: var(--faded); font-style: italic; font-size: 0.88rem; line-height: 1.7; }
+.form-inner { padding: 12px; }
+.form-inner h3 { font-family: 'Playfair Display', serif; font-size: 1rem; color: var(--rust); border-bottom: 1px solid var(--parchment-deep); padding-bottom: 6px; margin-bottom: 10px; }
+.fg { margin-bottom: 8px; }
+.fg label { display: block; font-size: 0.72rem; color: var(--faded); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+.fg input { width: 100%; padding: 6px 9px; border: 1px solid var(--parchment-deep); background: #fffdf7; font-family: 'EB Garamond', serif; font-size: 0.88rem; color: var(--ink); border-radius: 2px; outline: none; }
+.fg input:focus { border-color: var(--gold); }
+.frow { display: flex; gap: 6px; }
+.frow .fg { flex: 1; } .frow .fg.wide { flex: 2; }
+.fsep { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gold); margin: 10px 0 6px; font-style: italic; }
+.btn-save { width: 100%; padding: 9px; background: var(--rust); color: var(--parchment); border: none; font-family: 'Playfair Display', serif; font-size: 0.95rem; cursor: pointer; border-radius: 2px; margin-top: 8px; }
+.btn-save:hover { background: #a04020; } .btn-save:disabled { background: #c09080; cursor: default; }
+.btn-cancel { width: 100%; padding: 7px; background: none; color: var(--faded); border: 1px solid var(--parchment-deep); font-family: 'EB Garamond', serif; font-size: 0.88rem; cursor: pointer; border-radius: 2px; margin-top: 4px; }
+.geo-status { font-size: 0.75rem; color: var(--faded); font-style: italic; min-height: 16px; margin-top: 4px; }
+.detail-inner { padding: 12px; }
+.detail-inner h3 { font-family: 'Playfair Display', serif; font-size: 1.1rem; color: var(--rust); margin-bottom: 3px; }
+.detail-dates { font-size: 0.8rem; color: var(--faded); font-style: italic; margin-bottom: 10px; }
+.detail-note { font-size: 0.82rem; font-style: italic; color: var(--faded); margin-bottom: 10px; }
+.ev-card { background: white; border: 1px solid var(--parchment-deep); border-radius: 2px; padding: 8px 10px; margin-bottom: 6px; display: flex; gap: 8px; align-items: flex-start; }
+.ev-icon { font-size: 1.1rem; line-height: 1.3; }
+.ev-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faded); }
+.ev-place { font-size: 0.9rem; font-weight: 500; }
+.ev-date { font-size: 0.78rem; color: var(--faded); font-style: italic; }
+.arch-section { border-top: 1px solid var(--parchment-deep); padding-top: 10px; margin-top: 8px; }
+.arch-section h4 { font-family: 'Playfair Display', serif; font-size: 0.88rem; margin-bottom: 7px; }
+.arch-card { background: #fffbf0; border: 1px solid #e8d070; border-radius: 2px; padding: 8px 10px; margin-bottom: 5px; font-size: 0.8rem; line-height: 1.5; }
+.arch-name { font-weight: 600; color: var(--rust); margin-bottom: 2px; }
+.arch-card a { color: var(--sage); font-size: 0.75rem; }
+.map-wrap { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+.legend { position: absolute; bottom: 28px; right: 10px; background: rgba(245,234,214,0.95); border: 1px solid var(--parchment-deep); border-radius: 3px; padding: 7px 11px; z-index: 1000; font-size: 0.78rem; line-height: 2; pointer-events: none; box-shadow: 0 2px 8px var(--shadow); }
+.l-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: var(--parchment); } ::-webkit-scrollbar-thumb { background: var(--parchment-deep); border-radius: 3px; }
+.leaflet-popup-content-wrapper { font-family: 'EB Garamond', Georgia, serif !important; border-radius: 3px !important; }
+.popup-name { font-family: 'Playfair Display', serif; font-size: 1rem; font-weight: 700; color: var(--rust); margin-bottom: 3px; }
+.popup-line { font-size: 0.85rem; }
+.popup-type { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faded); }
+@media (max-width: 640px) { .sidebar { width: 100%; height: 42vh; } .main { flex-direction: column; } .map-wrap { flex: 1; } }
+</style>
+</head>
+<body>
+<header>
+<div>
+<h1>⚜ Familien-Stammbaum</h1>
+<div class="subtitle">Lebensstationen auf der Karte</div>
+</div>
+<button class="btn-add" onclick="openForm()">+ Person</button>
+</header>
+<div class="main">
+<div class="sidebar">
+<div class="sidebar-tabs">
+<button class="tab-btn active" id="tab-btn-list" onclick="switchTab('list')">Personen</button>
+<button class="tab-btn" id="tab-btn-form" onclick="switchTab('form')">Erfassen</button>
+<button class="tab-btn" id="tab-btn-detail" onclick="switchTab('detail')">Detail</button>
+</div>
+<div class="tab-panel active" id="tab-list">
+<div class="person-list" id="personList">
+<div class="empty-hint">Noch keine Personen erfasst.<br>Klicke oben auf „+ Person".</div>
+</div>
+</div>
+<div class="tab-panel" id="tab-form">
+<div class="form-inner">
+<h3 id="formTitle">Neue Person</h3>
+<div class="fg"><label>Vorname(n)</label><input id="fVorname" placeholder="z.B. Johann Georg"></div>
+<div class="fg"><label>Nachname (Geburtsname)</label><input id="fNachname" placeholder="z.B. Müller"></div>
+<div class="fsep">🌿 Geburt</div>
+<div class="frow">
+<div class="fg wide"><label>Ort</label><input id="fGeburtOrt" placeholder="Geburtsort"></div>
+<div class="fg"><label>Jahr / Datum</label><input id="fGeburtDatum" placeholder="1845"></div>
+</div>
+<div class="fg"><label>Heutiger Ortsname (falls historisch/fremd)</label><input id="fGeburtMod" placeholder="z.B. Dzierżoniów, Polen"></div>
+<div class="fsep">💍 Heirat <span style="font-size:0.7rem;font-weight:400">(optional)</span></div>
+<div class="frow">
+<div class="fg wide"><label>Ort</label><input id="fHeiratOrt" placeholder="Heiratsort"></div>
+<div class="fg"><label>Jahr / Datum</label><input id="fHeiratDatum" placeholder="1870"></div>
+</div>
+<div class="fg"><label>Ehepartner/in</label><input id="fEhepartner" placeholder="Name des Ehepartners"></div>
+<div class="fsep">✝ Tod <span style="font-size:0.7rem;font-weight:400">(optional)</span></div>
+<div class="frow">
+<div class="fg wide"><label>Ort</label><input id="fTodOrt" placeholder="Sterbeort"></div>
+<div class="fg"><label>Jahr / Datum</label><input id="fTodDatum" placeholder="1912"></div>
+</div>
+<div class="fg" style="margin-top:6px"><label>Notizen</label><input id="fNotizen" placeholder="Beruf, Besonderheiten …"></div>
+<div class="geo-status" id="geoStatus"></div>
+<button class="btn-save" id="btnSave" onclick="savePerson()">Speichern & auf Karte zeigen</button>
+<button class="btn-cancel" onclick="switchTab('list')">Abbrechen</button>
+<input type="hidden" id="fEditId">
+</div>
+</div>
+<div class="tab-panel" id="tab-detail">
+<div class="detail-inner" id="detailContent">
+<div class="empty-hint">Person aus der Liste auswählen.</div>
+</div>
+</div>
+</div>
+<div class="map-wrap">
+<div id="map"></div>
+<div class="legend">
+<div><span class="l-dot" style="background:var(--birth-color)"></span>Geburt</div>
+<div><span class="l-dot" style="background:var(--wed-color)"></span>Heirat</div>
+<div><span class="l-dot" style="background:var(--death-color)"></span>Tod</div>
+</div>
+</div>
+</div>
+<script>
+let persons = [];
+try { persons = JSON.parse(localStorage.getItem('ahnen_v3') || '[]'); } catch(e) {}
+function persist() { localStorage.setItem('ahnen_v3', JSON.stringify(persons)); }
+
+const map = L.map('map').setView([50.5, 10.5], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom: 18
+}).addTo(map);
+const layerMarkers = L.layerGroup().addTo(map);
+const layerLines = L.layerGroup().addTo(map);
+
+function circleIcon(color, big) {
+const s = big ? 16 : 12;
+return L.divIcon({ html: `<div style="width:${s}px;height:${s}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 5px rgba(0,0,0,.4)"></div>`, className:'', iconSize:[s,s], iconAnchor:[s/2,s/2], popupAnchor:[0,-s/2] });
+}
+const EV = [
+{ key:'geburt', coordKey:'geburtCoords', color:'#3d6b3a', label:'Geburt', icon:'🌿' },
+{ key:'heirat', coordKey:'heiratCoords', color:'#8b6914', label:'Heirat', icon:'💍' },
+{ key:'tod', coordKey:'todCoords', color:'#7a2020', label:'Tod', icon:'✝' },
+];
+let selectedId = null;
+
+function renderMap() {
+layerMarkers.clearLayers(); layerLines.clearLayers();
+persons.forEach(p => {
+const coords = EV.map(e => p[e.coordKey]).filter(Boolean);
+if (coords.length > 1) L.polyline(coords, { color: p.id===selectedId?'#8b3a1e':'#a08060', weight: p.id===selectedId?2:1, dashArray:'5,5', opacity: p.id===selectedId?0.7:0.4 }).addTo(layerLines);
+EV.forEach(ev => {
+if (!p[ev.coordKey]) return;
+const m = L.marker(p[ev.coordKey], { icon: circleIcon(ev.color, p.id===selectedId) });
+m.bindPopup(`<div class="popup-type">${ev.icon} ${ev.label}</div><div class="popup-name">${p.vorname} ${p.nachname}</div><div class="popup-line">${p[ev.key+'Ort']||''}${p[ev.key+'Datum']?' · '+p[ev.key+'Datum']:''}</div>`);
+m.on('click', () => selectPerson(p.id));
+m.addTo(layerMarkers);
+});
+});
+}
+function fitMap() {
+const all = persons.flatMap(p => EV.map(e => p[e.coordKey]).filter(Boolean));
+if (all.length) map.fitBounds(L.latLngBounds(all), { padding:[40,40], maxZoom:10 });
+}
+
+async function geocode(place) {
+if (!place?.trim()) return null;
+try {
+const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(place), { headers:{'Accept-Language':'de'} });
+const d = await r.json();
+if (d?.[0]) return [parseFloat(d[0].lat), parseFloat(d[0].lon)];
+} catch(e) {}
+return null;
+}
+
+function archiveHints(p) {
+const txt = [p.geburtOrt,p.heiratOrt,p.todOrt].filter(Boolean).join(' ').toLowerCase();
+const base = [
+{ name:'Matricula Online', desc:'Digitalisierte Kirchenbücher aus D, A, PL u.v.m.', url:'https://matricula-online.eu' },
+{ name:'FamilySearch', desc:'Größte kostenlose genealogische Datenbank weltweit.', url:'https://familysearch.org' },
+{ name:'Archion', desc:'Evangelische Kirchenbücher aus deutschen Landeskirchen.', url:'https://archion.de' },
+];
+const regional = [
+{ kw:['bay','münchen','nürnberg','augsburg','regensburg','bamberg','würzburg'], name:'Bayer. Hauptstaatsarchiv', url:'https://gda.bayern.de' },
+{ kw:['sachsen','dresden','leipzig','chemnitz'], name:'Sächsisches Staatsarchiv', url:'https://staatsarchiv.sachsen.de' },
+{ kw:['österreich','wien','graz','salzburg','tirol','innsbruck'], name:'Österr. Staatsarchiv', url:'https://matricula-online.eu' },
+{ kw:['schweiz','zürich','bern','basel','luzern'], name:'Schweizer Geneal. Ges.', url:'https://sgg-ssg.ch' },
+{ kw:['böhmen','mähren','prag','sudetenland'], name:'Badatelna (CZ-Kirchenbücher)', url:'https://badatelna.eu' },
+{ kw:['württemberg','stuttgart','freiburg','karlsruhe','konstanz'], name:'Landesarchiv Baden-Württemberg', url:'https://landesarchiv-bw.de' },
+{ kw:['hessen','frankfurt','darmstadt','kassel','wiesbaden'], name:'Hessisches Landesarchiv', url:'https://archivportal.hessen.de' },
+{ kw:['westfalen','rheinland','köln','düsseldorf','münster','aachen'], name:'Landesarchiv NRW', url:'https://archive.nrw.de' },
+{ kw:['elsass','straßburg','colmar','lothringen'], name:'Archives Bas-Rhin (Elsass)', url:'https://archives.bas-rhin.fr' },
+{ kw:['preußen','berlin','brandenburg','pommern','ostpreußen'], name:'GStA Preuß. Kulturbesitz', url:'https://gsta.spk-berlin.de' },
+{ kw:['thüringen','erfurt','weimar','jena','gotha'], name:'Thüringisches Landesarchiv', url:'https://www.thueringen.de/landesarchiv' },
+{ kw:['sachsen-anhalt','halle','magdeburg','dessau'], name:'Landesarchiv Sachsen-Anhalt', url:'https://landesarchiv.sachsen-anhalt.de' },
+];
+const found = regional.filter(r => r.kw.some(k => txt.includes(k))).map(r => ({ name:r.name, desc:'Regionales Archiv für diese Orte.', url:r.url }));
+return [...base, ...found].slice(0, 6);
+}
+
+function switchTab(name) {
+['list','form','detail'].forEach(t => {
+document.getElementById('tab-'+t).classList.toggle('active', t===name);
+document.getElementById('tab-btn-'+t).classList.toggle('active', t===name);
+});
+}
+
+function openForm(editId) {
+clearForm();
+if (editId) {
+const p = persons.find(x => x.id===editId); if (!p) return;
+document.getElementById('fEditId').value = editId;
+document.getElementById('fVorname').value = p.vorname||'';
+document.getElementById('fNachname').value = p.nachname||'';
+document.getElementById('fGeburtOrt').value = p.geburtOrt||'';
+document.getElementById('fGeburtMod').value = p.geburtMod||'';
+document.getElementById('fGeburtDatum').value=p.geburtDatum||'';
+document.getElementById('fHeiratOrt').value = p.heiratOrt||'';
+document.getElementById('fHeiratDatum').value=p.heiratDatum||'';
+document.getElementById('fEhepartner').value= p.ehepartner||'';
+document.getElementById('fTodOrt').value = p.todOrt||'';
+document.getElementById('fTodDatum').value = p.todDatum||'';
+document.getElementById('fNotizen').value = p.notizen||'';
+document.getElementById('formTitle').textContent = 'Person bearbeiten';
+}
+switchTab('form');
+}
+
+function clearForm() {
+['fVorname','fNachname','fGeburtOrt','fGeburtMod','fGeburtDatum','fHeiratOrt','fHeiratDatum','fEhepartner','fTodOrt','fTodDatum','fNotizen','fEditId'].forEach(id => document.getElementById(id).value='');
+document.getElementById('formTitle').textContent = 'Neue Person';
+document.getElementById('geoStatus').textContent = '';
+}
+
+async function savePerson() {
+const vorname = document.getElementById('fVorname').value.trim();
+const nachname = document.getElementById('fNachname').value.trim();
+if (!vorname && !nachname) { alert('Bitte mindestens einen Namen eingeben.'); return; }
+const btn = document.getElementById('btnSave');
+btn.disabled = true;
+document.getElementById('geoStatus').textContent = 'Orte werden gesucht …';
+const geburtOrt = document.getElementById('fGeburtOrt').value.trim();
+const geburtMod = document.getElementById('fGeburtMod').value.trim();
+const heiratOrt = document.getElementById('fHeiratOrt').value.trim();
+const todOrt = document.getElementById('fTodOrt').value.trim();
+const [gc,hc,tc] = await Promise.all([
+geburtOrt ? geocode(geburtMod||geburtOrt) : null,
+heiratOrt ? geocode(heiratOrt) : null,
+todOrt ? geocode(todOrt) : null,
+]);
+const found = [[gc,geburtOrt],[hc,heiratOrt],[tc,todOrt]].filter(([c])=>c).map(([,n])=>n);
+document.getElementById('geoStatus').textContent = found.length ? '✓ Gefunden: '+found.join(', ') : 'Keine Koordinaten — Ortsnamen prüfen.';
+const editId = document.getElementById('fEditId').value;
+const p = {
+id: editId||Date.now().toString(), vorname, nachname,
+geburtOrt, geburtMod, geburtDatum:document.getElementById('fGeburtDatum').value.trim(), geburtCoords:gc,
+heiratOrt, heiratDatum:document.getElementById('fHeiratDatum').value.trim(), heiratCoords:hc,
+ehepartner:document.getElementById('fEhepartner').value.trim(),
+todOrt, todDatum:document.getElementById('fTodDatum').value.trim(), todCoords:tc,
+notizen:document.getElementById('fNotizen').value.trim(),
+};
+if (editId) { const idx=persons.findIndex(x=>x.id===editId); if(idx>=0) persons[idx]=p; else persons.push(p); }
+else persons.push(p);
+persist(); renderPersonList(); renderMap(); fitMap(); selectPerson(p.id);
+btn.disabled=false; clearForm();
+}
+
+function selectPerson(id) {
+selectedId=id; renderMap(); renderPersonList(); showDetail(id); switchTab('detail');
+const p=persons.find(x=>x.id===id); if(!p) return;
+const coords=EV.map(e=>p[e.coordKey]).filter(Boolean);
+if(coords.length) map.flyToBounds(L.latLngBounds(coords),{padding:[60,60],maxZoom:10,duration:1});
+}
+
+function showDetail(id) {
+const p=persons.find(x=>x.id===id);
+const el=document.getElementById('detailContent');
+if(!p){el.innerHTML='<div class="empty-hint">Person nicht gefunden.</div>';return;}
+const years=[p.geburtDatum,p.todDatum].filter(Boolean).join(' – ');
+const evHtml=EV.filter(ev=>p[ev.key+'Ort']).map(ev=>{
+const date=p[ev.key+'Datum']||'';
+const extra=ev.key==='heirat'&&p.ehepartner?'mit '+p.ehepartner:'';
+return `<div class="ev-card"><div class="ev-icon">${ev.icon}</div><div><div class="ev-label">${ev.label}</div><div class="ev-place">${p[ev.key+'Ort']}</div>${(date||extra)?`<div class="ev-date">${[date,extra].filter(Boolean).join(' · ')}</div>`:''}</div></div>`;
+}).join('');
+const archHtml=archiveHints(p).map(a=>`<div class="arch-card"><div class="arch-name">${a.name}</div><div>${a.desc}</div><a href="${a.url}" target="_blank" rel="noopener">${a.url.replace('https://','')}</a></div>`).join('');
+el.innerHTML=`<h3>${p.vorname} ${p.nachname}</h3>${years?`<div class="detail-dates">${years}</div>`:''}${p.notizen?`<div class="detail-note">${p.notizen}</div>`:''}${evHtml}<div class="arch-section"><h4>📜 Wo forschen?</h4>${archHtml}</div><button class="btn-cancel" style="margin-top:10px" onclick="openForm('${p.id}')">✏ Bearbeiten</button>`;
+}
+
+function renderPersonList() {
+const el=document.getElementById('personList');
+if(!persons.length){el.innerHTML='<div class="empty-hint">Noch keine Personen.<br>Klicke „+ Person" oben rechts.</div>';return;}
+el.innerHTML=persons.map(p=>{
+const years=[p.geburtDatum,p.todDatum].filter(Boolean).join(' – ');
+const places=[p.geburtOrt?`<span class="dot dot-b"></span>${p.geburtOrt}`:'',p.heiratOrt?`<span class="dot dot-h"></span>${p.heiratOrt}`:'',p.todOrt?`<span class="dot dot-t"></span>${p.todOrt}`:''].filter(Boolean).join(' &nbsp;');
+return `<div class="person-card${p.id===selectedId?' selected':''}" onclick="selectPerson('${p.id}')"><button class="btn-del" onclick="deletePerson('${p.id}',event)" title="Löschen">×</button><div class="pname">${p.vorname} ${p.nachname}</div>${years?`<div class="pyears">${years}</div>`:''} ${places?`<div class="pplaces">${places}</div>`:''}</div>`;
+}).join('');
+}
+
+function deletePerson(id,e) {
+e.stopPropagation();
+if(!confirm('Person wirklich löschen?')) return;
+persons=persons.filter(x=>x.id!==id);
+if(selectedId===id) selectedId=null;
+persist(); renderPersonList(); renderMap(); switchTab('list');
+}
+
+renderPersonList(); renderMap();
+if(persons.length) fitMap();
+</script>
+</body>
+</html>

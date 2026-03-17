@@ -236,13 +236,18 @@ mapReady = true;
 }
 
 function markerIcon(color, nameLabel, evLabel) {
-const label = `<span style="font-weight:700">${nameLabel}</span> · ${evLabel}`;
+// Pfeil-Linie vom Punkt zum Label (schräg oben-rechts)
+const dot = 13, lineLen = 22, lx = lineLen, ly = lineLen;
 return L.divIcon({
-html: `<div style="position:relative">
-<div style="width:13px;height:13px;border-radius:50%;background:${color};border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,.5)"></div>
-<div style="position:absolute;top:15px;left:50%;transform:translateX(-50%);white-space:nowrap;background:rgba(255,255,255,0.93);border:1px solid #ccc;border-radius:3px;padding:2px 6px;font-size:11px;font-family:Georgia,serif;color:#2c1810;line-height:1.4;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.2)">${label}</div>
+html: `<div style="position:relative;width:${dot}px;height:${dot}px">
+<div style="width:${dot}px;height:${dot}px;border-radius:50%;background:${color};border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,.5);position:relative;z-index:2"></div>
+<svg style="position:absolute;top:${dot/2}px;left:${dot/2}px;overflow:visible;pointer-events:none;z-index:1" width="1" height="1">
+<line x1="0" y1="0" x2="-${lx}" y2="-${ly}" stroke="${color}" stroke-width="1.5" stroke-dasharray="none"/>
+<circle cx="-${lx}" cy="-${ly}" r="2" fill="${color}"/>
+</svg>
+<div style="position:absolute;top:${dot/2 - ly - 22}px;left:${dot/2 - lx - 4}px;transform:translateX(-100%);white-space:nowrap;background:rgba(255,255,255,0.95);border:1px solid ${color};border-radius:3px;padding:2px 7px;font-size:11px;font-family:Georgia,serif;color:#2c1810;line-height:1.5;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.15)"><span style="font-weight:700">${nameLabel}</span> · ${evLabel}</div>
 </div>`,
-className: '', iconSize: [13,13], iconAnchor: [6,6], popupAnchor: [0,-8]
+className: '', iconSize: [dot, dot], iconAnchor: [dot/2, dot/2], popupAnchor: [0, -dot/2]
 });
 }
 
@@ -409,6 +414,7 @@ else persons.push(p);
 persist();
 renderPersonList();
 showDetail(p.id);
+if (mapReady) renderMap(); // Karte sofort aktualisieren falls offen
 btn.disabled = false;
 clearForm();
 }

@@ -235,24 +235,32 @@ layerLines = L.layerGroup().addTo(map);
 mapReady = true;
 }
 
+let _markerCount = 0;
 function markerIcon(color, nameLabel, evLabel) {
-// Pfeil-Linie vom Punkt zum Label (schräg oben-rechts)
-const dot = 13, lineLen = 22, lx = lineLen, ly = lineLen;
+const dot = 13, d = dot/2;
+const dirs = [
+{ lx: 20, ly: -20, labelTop: d-20-18, labelLeft: d+22, transform: '' },
+{ lx: -20, ly: -20, labelTop: d-20-18, labelLeft: d-22, transform: 'translateX(-100%)' },
+{ lx: 20, ly: 20, labelTop: d+20+4, labelLeft: d+22, transform: '' },
+{ lx: -20, ly: 20, labelTop: d+20+4, labelLeft: d-22, transform: 'translateX(-100%)' },
+];
+const dir = dirs[(_markerCount++) % 4];
 return L.divIcon({
 html: `<div style="position:relative;width:${dot}px;height:${dot}px">
 <div style="width:${dot}px;height:${dot}px;border-radius:50%;background:${color};border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,.5);position:relative;z-index:2"></div>
-<svg style="position:absolute;top:${dot/2}px;left:${dot/2}px;overflow:visible;pointer-events:none;z-index:1" width="1" height="1">
-<line x1="0" y1="0" x2="-${lx}" y2="-${ly}" stroke="${color}" stroke-width="1.5" stroke-dasharray="none"/>
-<circle cx="-${lx}" cy="-${ly}" r="2" fill="${color}"/>
+<svg style="position:absolute;top:${d}px;left:${d}px;overflow:visible;pointer-events:none;z-index:1" width="1" height="1">
+<line x1="0" y1="0" x2="${dir.lx}" y2="${dir.ly}" stroke="${color}" stroke-width="1.5"/>
+<circle cx="${dir.lx}" cy="${dir.ly}" r="2" fill="${color}"/>
 </svg>
-<div style="position:absolute;top:${dot/2 - ly - 22}px;left:${dot/2 - lx - 4}px;transform:translateX(-100%);white-space:nowrap;background:rgba(255,255,255,0.95);border:1px solid ${color};border-radius:3px;padding:2px 7px;font-size:11px;font-family:Georgia,serif;color:#2c1810;line-height:1.5;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.15)"><span style="font-weight:700">${nameLabel}</span> · ${evLabel}</div>
+<div style="position:absolute;top:${dir.labelTop}px;left:${dir.labelLeft}px;transform:${dir.transform};white-space:nowrap;background:rgba(255,255,255,0.95);border:1px solid ${color};border-radius:3px;padding:2px 7px;font-size:11px;font-family:Georgia,serif;color:#2c1810;line-height:1.5;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.15)"><span style="font-weight:700">${nameLabel}</span> · ${evLabel}</div>
 </div>`,
-className: '', iconSize: [dot, dot], iconAnchor: [dot/2, dot/2], popupAnchor: [0, -dot/2]
+className: '', iconSize: [dot, dot], iconAnchor: [d, d], popupAnchor: [0, -d]
 });
 }
 
 function renderMap() {
 if (!mapReady) return;
+_markerCount = 0;
 layerMarkers.clearLayers();
 layerLines.clearLayers();
 const toShow = activeFilter ? persons.filter(p => p.id === activeFilter) : persons;
@@ -391,22 +399,34 @@ const geburtOrt = document.getElementById('fGeburtOrt').value.trim();
 const geburtMod = document.getElementById('fGeburtMod').value.trim();
 const heiratOrt = document.getElementById('fHeiratOrt').value.trim();
 const todOrt = document.getElementById('fTodOrt').value.trim();
+const editId = document.getElementById('fEditId').value;
+const old = editId ? persons.find(x => x.id===editId) : null;
 const [gc,hc,tc] = await Promise.all([
 geburtOrt ? geocode(geburtMod||geburtOrt) : null,
 heiratOrt ? geocode(heiratOrt) : null,
 todOrt ? geocode(todOrt) : null,
 ]);
-const found = [[gc,geburtOrt],[hc,heiratOrt],[tc,todOrt]].filter(([c])=>c).map(([,n])=>n);
+// Alte Koordinaten behalten wenn Geocoding null und Ort unveraendert
+const keepOrNew = (fresh, ort, mod, oldCoord, oldOrt, oldMod) => {
+if (fresh) return fresh;
+if (!ort) return null;
+if (old && oldOrt===ort && (oldMod||'')===(mod||'')) return oldCoord;
+return null;
+};
+const geburtCoords = keepOrNew(gc, geburtOrt, geburtMod, old&&old.geburtCoords, old&&old.geburtOrt, old&&old.geburtMod);
+const heiratCoords = keepOrNew(hc, heiratOrt, '', old&&old.heiratCoords, old&&old.heiratOrt, '');
+const todCoords = keepOrNew(tc, todOrt, '', old&&old.todCoords, old&&old.todOrt, '');
+const found = [[geburtCoords,geburtOrt],[heiratCoords,heiratOrt],[todCoords,todOrt]].filter(([c])=>c).map(([,n])=>n);
+const notFound = [[gc,geburtOrt],[hc,heiratOrt],[tc,todOrt]].filter(([c,o])=>!c&&o).map(([,n])=>n);
 document.getElementById('geoStatus').textContent = found.length
-? '✓ Gefunden: '+found.join(', ')
-: 'Keine Koordinaten — Ortsnamen prüfen.';
-const editId = document.getElementById('fEditId').value;
+? '✓ '+found.join(', ')+(notFound.length?' · Nicht gefunden: '+notFound.join(', '):'')
+: 'Keine Koordinaten gefunden — Ortsnamen prüfen.';
 const p = {
 id: editId||Date.now().toString(), vorname, nachname,
-geburtOrt, geburtMod, geburtDatum:document.getElementById('fGeburtDatum').value.trim(), geburtCoords:gc,
-heiratOrt, heiratDatum:document.getElementById('fHeiratDatum').value.trim(), heiratCoords:hc,
+geburtOrt, geburtMod, geburtDatum:document.getElementById('fGeburtDatum').value.trim(), geburtCoords,
+heiratOrt, heiratDatum:document.getElementById('fHeiratDatum').value.trim(), heiratCoords,
 ehepartner:document.getElementById('fEhepartner').value.trim(),
-todOrt, todDatum:document.getElementById('fTodDatum').value.trim(), todCoords:tc,
+todOrt, todDatum:document.getElementById('fTodDatum').value.trim(), todCoords,
 notizen:document.getElementById('fNotizen').value.trim(),
 };
 if (editId) { const idx=persons.findIndex(x=>x.id===editId); if(idx>=0) persons[idx]=p; else persons.push(p); }

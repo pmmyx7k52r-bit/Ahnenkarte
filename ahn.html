@@ -233,43 +233,59 @@ attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom
 layerMarkers = L.layerGroup().addTo(map);
 layerLines = L.layerGroup().addTo(map);
 mapReady = true;
+// Labels bei Zoom-Änderung neu zeichnen
+map.on('zoomend', () => renderMap(true));
+}
+
+// Nur Punkt, kein Label
+function dotIcon(color) {
+const dot = 11, d = dot/2;
+return L.divIcon({
+html: `<div style="width:${dot}px;height:${dot}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+className: '', iconSize: [dot, dot], iconAnchor: [d, d], popupAnchor: [0, -d]
+});
 }
 
 let _markerCount = 0;
-function markerIcon(color, nameLabel, evLabel) {
-const dot = 13, d = dot/2;
+function markerIcon(color, vorname, evKuerzel) {
+const dot = 11, d = dot/2, L2 = 14;
 const dirs = [
-{ lx: 20, ly: -20, labelTop: d-20-18, labelLeft: d+22, transform: '' },
-{ lx: -20, ly: -20, labelTop: d-20-18, labelLeft: d-22, transform: 'translateX(-100%)' },
-{ lx: 20, ly: 20, labelTop: d+20+4, labelLeft: d+22, transform: '' },
-{ lx: -20, ly: 20, labelTop: d+20+4, labelLeft: d-22, transform: 'translateX(-100%)' },
+{ lx: L2, ly: -L2, labelTop: d-L2-13, labelLeft: d+L2+1, tx: '' },
+{ lx: -L2, ly: -L2, labelTop: d-L2-13, labelLeft: d-L2-1, tx: 'translateX(-100%)' },
+{ lx: L2, ly: L2, labelTop: d+L2+2, labelLeft: d+L2+1, tx: '' },
+{ lx: -L2, ly: L2, labelTop: d+L2+2, labelLeft: d-L2-1, tx: 'translateX(-100%)' },
 ];
 const dir = dirs[(_markerCount++) % 4];
 return L.divIcon({
 html: `<div style="position:relative;width:${dot}px;height:${dot}px">
-<div style="width:${dot}px;height:${dot}px;border-radius:50%;background:${color};border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,.5);position:relative;z-index:2"></div>
+<div style="width:${dot}px;height:${dot}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5);position:relative;z-index:2"></div>
 <svg style="position:absolute;top:${d}px;left:${d}px;overflow:visible;pointer-events:none;z-index:1" width="1" height="1">
-<line x1="0" y1="0" x2="${dir.lx}" y2="${dir.ly}" stroke="${color}" stroke-width="1.5"/>
-<circle cx="${dir.lx}" cy="${dir.ly}" r="2" fill="${color}"/>
+<line x1="0" y1="0" x2="${dir.lx}" y2="${dir.ly}" stroke="${color}" stroke-width="1.2" opacity="0.7"/>
 </svg>
-<div style="position:absolute;top:${dir.labelTop}px;left:${dir.labelLeft}px;transform:${dir.transform};white-space:nowrap;background:rgba(255,255,255,0.95);border:1px solid ${color};border-radius:3px;padding:2px 7px;font-size:11px;font-family:Georgia,serif;color:#2c1810;line-height:1.5;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.15)"><span style="font-weight:700">${nameLabel}</span> · ${evLabel}</div>
+<div style="position:absolute;top:${dir.labelTop}px;left:${dir.labelLeft}px;transform:${dir.tx};white-space:nowrap;background:rgba(255,255,255,0.88);border-left:2px solid ${color};border-radius:2px;padding:1px 4px;font-size:9.5px;font-family:Georgia,serif;color:#2c1810;line-height:1.4;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.1)">${vorname} <b style="color:${color}">${evKuerzel}</b></div>
 </div>`,
 className: '', iconSize: [dot, dot], iconAnchor: [d, d], popupAnchor: [0, -d]
 });
 }
 
-function renderMap() {
+const LABEL_ZOOM = 9; // ab diesem Zoom werden Labels angezeigt
+
+function renderMap(keepBounds) {
 if (!mapReady) return;
 _markerCount = 0;
 layerMarkers.clearLayers();
 layerLines.clearLayers();
+const zoom = map.getZoom();
+const showLabels = zoom >= LABEL_ZOOM;
 const toShow = activeFilter ? persons.filter(p => p.id === activeFilter) : persons;
 toShow.forEach(p => {
 const coords = EV.map(e => p[e.coordKey]).filter(Boolean);
 if (coords.length > 1) L.polyline(coords, { color:'#8b6914', weight:1.5, dashArray:'5,4', opacity:0.45 }).addTo(layerLines);
 EV.forEach(ev => {
 if (!p[ev.coordKey]) return;
-const m = L.marker(p[ev.coordKey], { icon: markerIcon(ev.color, `${p.vorname} ${p.nachname}`, ev.label) });
+const kuerzel = ev.label==='Geburt'?'G':ev.label==='Heirat'?'H':'T';
+const icon = showLabels ? markerIcon(ev.color, p.vorname, kuerzel) : dotIcon(ev.color);
+const m = L.marker(p[ev.coordKey], { icon });
 m.bindPopup(`
 <div class="popup-type">${ev.icon} ${ev.label}</div>
 <div class="popup-name">${p.vorname} ${p.nachname}</div>
@@ -279,8 +295,10 @@ ${ev.key==='heirat'&&p.ehepartner?`<div class="popup-line" style="font-style:ita
 m.addTo(layerMarkers);
 });
 });
+if (!keepBounds) {
 const allCoords = toShow.flatMap(p => EV.map(e => p[e.coordKey]).filter(Boolean));
 if (allCoords.length) map.fitBounds(L.latLngBounds(allCoords), { padding:[50,60], maxZoom:10 });
+}
 }
 
 function buildFilter() {
@@ -434,7 +452,7 @@ else persons.push(p);
 persist();
 renderPersonList();
 showDetail(p.id);
-if (mapReady) renderMap(); // Karte sofort aktualisieren falls offen
+if (mapReady) renderMap(true); // Karte sofort aktualisieren falls offen
 btn.disabled = false;
 clearForm();
 }

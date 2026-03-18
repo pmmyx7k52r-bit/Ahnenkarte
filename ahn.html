@@ -278,14 +278,47 @@ layerLines.clearLayers();
 const zoom = map.getZoom();
 const showLabels = zoom >= LABEL_ZOOM;
 const toShow = activeFilter ? persons.filter(p => p.id === activeFilter) : persons;
+
+// Verbindungslinien zuerst
 toShow.forEach(p => {
 const coords = EV.map(e => p[e.coordKey]).filter(Boolean);
 if (coords.length > 1) L.polyline(coords, { color:'#8b6914', weight:1.5, dashArray:'5,4', opacity:0.45 }).addTo(layerLines);
+});
+
+// Alle Marker sammeln, dann Duplikate auffächern
+const allMarkers = [];
+toShow.forEach(p => {
 EV.forEach(ev => {
 if (!p[ev.coordKey]) return;
+allMarkers.push({ coords: p[ev.coordKey], p, ev });
+});
+});
+
+// Koordinaten-Schlüssel zum Gruppieren (auf 4 Nachkommastellen = ~11m)
+const groups = {};
+allMarkers.forEach(m => {
+const key = m.coords[0].toFixed(4) + ',' + m.coords[1].toFixed(4);
+if (!groups[key]) groups[key] = [];
+groups[key].push(m);
+});
+
+// Offset-Radius: zoom-abhängig so dass Marker sichtbar auseinander liegen
+const offsetDeg = 0.0004 * Math.pow(2, Math.max(0, 10 - zoom));
+
+Object.values(groups).forEach(group => {
+const n = group.length;
+group.forEach(({ coords, p, ev }, i) => {
+// Kreisförmig auffächern wenn mehrere am gleichen Ort
+let lat = coords[0], lon = coords[1];
+if (n > 1) {
+const angle = (2 * Math.PI * i / n) - Math.PI/2;
+const r = n === 2 ? offsetDeg * 0.7 : offsetDeg;
+lat = coords[0] + r * Math.cos(angle);
+lon = coords[1] + r * Math.sin(angle) / Math.cos(coords[0] * Math.PI/180);
+}
 const kuerzel = ev.label==='Geburt'?'G':ev.label==='Heirat'?'H':'T';
 const icon = showLabels ? markerIcon(ev.color, p.vorname, kuerzel) : dotIcon(ev.color);
-const m = L.marker(p[ev.coordKey], { icon });
+const m = L.marker([lat, lon], { icon });
 m.bindPopup(`
 <div class="popup-type">${ev.icon} ${ev.label}</div>
 <div class="popup-name">${p.vorname} ${p.nachname}</div>
@@ -295,6 +328,7 @@ ${ev.key==='heirat'&&p.ehepartner?`<div class="popup-line" style="font-style:ita
 m.addTo(layerMarkers);
 });
 });
+
 if (!keepBounds) {
 const allCoords = toShow.flatMap(p => EV.map(e => p[e.coordKey]).filter(Boolean));
 if (allCoords.length) map.fitBounds(L.latLngBounds(allCoords), { padding:[50,60], maxZoom:10 });
@@ -424,21 +458,35 @@ geburtOrt ? geocode(geburtMod||geburtOrt) : null,
 heiratOrt ? geocode(heiratOrt) : null,
 todOrt ? geocode(todOrt) : null,
 ]);
-// Alte Koordinaten behalten wenn Geocoding null und Ort unveraendert
-const keepOrNew = (fresh, ort, mod, oldCoord, oldOrt, oldMod) => {
-if (fresh) return fresh;
-if (!ort) return null;
-if (old && oldOrt===ort && (oldMod||'')===(mod||'')) return oldCoord;
-return null;
+// Koordinaten-Logik:
+// - Neu gefunden -> immer nehmen
+// - Ort unveraendert -> alte Coords behalten (kein unnötiger Geocode-Verlust)
+// - Ort geaendert aber nicht gefunden -> null (alter Standort wird NICHT behalten)
+const ortGeaendert = (newOrt, newMod, oldP, ortKey, modKey) => {
+if (!oldP) return true;
+return newOrt !== (oldP[ortKey]||'') || (newMod||'') !== (oldP[modKey]||'');
 };
-const geburtCoords = keepOrNew(gc, geburtOrt, geburtMod, old&&old.geburtCoords, old&&old.geburtOrt, old&&old.geburtMod);
-const heiratCoords = keepOrNew(hc, heiratOrt, '', old&&old.heiratCoords, old&&old.heiratOrt, '');
-const todCoords = keepOrNew(tc, todOrt, '', old&&old.todCoords, old&&old.todOrt, '');
-const found = [[geburtCoords,geburtOrt],[heiratCoords,heiratOrt],[todCoords,todOrt]].filter(([c])=>c).map(([,n])=>n);
-const notFound = [[gc,geburtOrt],[hc,heiratOrt],[tc,todOrt]].filter(([c,o])=>!c&&o).map(([,n])=>n);
-document.getElementById('geoStatus').textContent = found.length
-? '✓ '+found.join(', ')+(notFound.length?' · Nicht gefunden: '+notFound.join(', '):'')
-: 'Keine Koordinaten gefunden — Ortsnamen prüfen.';
+const resolveCoords = (fresh, ort, mod, oldP, coordKey, ortKey, modKey) => {
+if (fresh) return fresh; // neu gefunden
+if (!ort) return null; // kein Ort
+if (!ortGeaendert(ort, mod, oldP, ortKey, modKey)) return oldP[coordKey]; // unveraendert
+return null; // geaendert aber nicht gefunden
+};
+const geburtCoords = resolveCoords(gc, geburtOrt, geburtMod, old, 'geburtCoords','geburtOrt','geburtMod');
+const heiratCoords = resolveCoords(hc, heiratOrt, '', old, 'heiratCoords','heiratOrt','');
+const todCoords = resolveCoords(tc, todOrt, '', old, 'todCoords','todOrt','');
+
+// Status-Meldung mit Details
+const lines = [];
+[[gc, geburtCoords, geburtOrt, geburtMod],
+[hc, heiratCoords, heiratOrt, ''],
+[tc, todCoords, todOrt, '']].forEach(([fresh, final, ort, mod]) => {
+if (!ort) return;
+if (fresh) lines.push('✓ ' + ort);
+else if (final) lines.push('↩ ' + ort + ' (unverändert)');
+else lines.push('⚠ ' + ort + ' — nicht gefunden, bitte „Heutiger Ortsname" ergänzen');
+});
+document.getElementById('geoStatus').textContent = lines.join(' · ') || 'Keine Orte eingetragen.';
 const p = {
 id: editId||Date.now().toString(), vorname, nachname,
 geburtOrt, geburtMod, geburtDatum:document.getElementById('fGeburtDatum').value.trim(), geburtCoords,
